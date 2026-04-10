@@ -45,6 +45,7 @@ export type UseAuthFilesDataResult = {
   deselectAll: () => void;
   batchDownload: (names: string[]) => Promise<void>;
   batchSetStatus: (names: string[], enabled: boolean) => Promise<void>;
+  executeBatchDelete: (names: string[]) => Promise<void>;
   batchDelete: (names: string[]) => void;
 };
 
@@ -118,13 +119,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
   }, []);
 
   const applyDeletedFiles = useCallback((names: string[]) => {
-    const deletedNames = Array.from(
-      new Set(
-        names
-          .map((name) => name.trim())
-          .filter(Boolean)
-      )
-    );
+    const deletedNames = Array.from(new Set(names.map((name) => name.trim()).filter(Boolean)));
     if (deletedNames.length === 0) return;
 
     const deletedSet = new Set(deletedNames);
@@ -232,9 +227,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
         }
 
         if (result.failed.length > 0) {
-          const details = result.failed
-            .map((item) => `${item.name}: ${item.error}`)
-            .join('; ');
+          const details = result.failed.map((item) => `${item.name}: ${item.error}`).join('; ');
           showNotification(`${t('notification.upload_failed')}: ${details}`, 'error');
         }
       } catch (err: unknown) {
@@ -319,9 +312,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
                 return;
               }
 
-              const result = await authFilesApi.deleteFiles(
-                filesToDelete.map((file) => file.name)
-              );
+              const result = await authFilesApi.deleteFiles(filesToDelete.map((file) => file.name));
               const success = result.deleted;
               const failed = result.failed.length;
 
@@ -503,7 +494,10 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
         );
 
         if (failCount === 0) {
-          showNotification(t('auth_files.batch_status_success', { count: successCount }), 'success');
+          showNotification(
+            t('auth_files.batch_status_success', { count: successCount }),
+            'success'
+          );
         } else {
           showNotification(
             t('auth_files.batch_status_partial', { success: successCount, failed: failCount }),
@@ -564,6 +558,35 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
     [showNotification, t]
   );
 
+  const executeBatchDelete = useCallback(
+    async (names: string[]) => {
+      const uniqueNames = Array.from(new Set(names));
+      if (uniqueNames.length === 0) return;
+
+      try {
+        const result = await authFilesApi.deleteFiles(uniqueNames);
+        applyDeletedFiles(result.files);
+
+        if (result.failed.length === 0) {
+          showNotification(`${t('auth_files.delete_all_success')} (${result.deleted})`, 'success');
+        } else {
+          showNotification(
+            t('auth_files.delete_filtered_partial', {
+              success: result.deleted,
+              failed: result.failed.length,
+              type: t('auth_files.filter_all'),
+            }),
+            'warning'
+          );
+        }
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : '';
+        showNotification(`${t('notification.delete_failed')}: ${errorMessage}`, 'error');
+      }
+    },
+    [applyDeletedFiles, showNotification, t]
+  );
+
   const batchDelete = useCallback(
     (names: string[]) => {
       const uniqueNames = Array.from(new Set(names));
@@ -575,33 +598,11 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
         variant: 'danger',
         confirmText: t('common.confirm'),
         onConfirm: async () => {
-          try {
-            const result = await authFilesApi.deleteFiles(uniqueNames);
-            applyDeletedFiles(result.files);
-
-            if (result.failed.length === 0) {
-              showNotification(
-                `${t('auth_files.delete_all_success')} (${result.deleted})`,
-                'success'
-              );
-            } else {
-              showNotification(
-                t('auth_files.delete_filtered_partial', {
-                  success: result.deleted,
-                  failed: result.failed.length,
-                  type: t('auth_files.filter_all'),
-                }),
-                'warning'
-              );
-            }
-          } catch (err: unknown) {
-            const errorMessage = err instanceof Error ? err.message : '';
-            showNotification(`${t('notification.delete_failed')}: ${errorMessage}`, 'error');
-          }
+          await executeBatchDelete(uniqueNames);
         },
       });
     },
-    [applyDeletedFiles, showConfirmation, showNotification, t]
+    [executeBatchDelete, showConfirmation, t]
   );
 
   return {
@@ -629,6 +630,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
     deselectAll,
     batchDownload,
     batchSetStatus,
+    executeBatchDelete,
     batchDelete,
   };
 }

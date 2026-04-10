@@ -145,6 +145,53 @@ export const getAuthFileStatusMessage = (file: AuthFileItem): string => {
 export const hasAuthFileStatusMessage = (file: AuthFileItem): boolean =>
   getAuthFileStatusMessage(file).length > 0;
 
+const AUTH_FILE_ZERO_BALANCE_STATUS_KEYWORDS = [
+  'usage_limit_reached',
+  'the usage limit has been reached',
+  '0余额',
+  '零余额',
+  '余额为0',
+  '余额不足',
+  '用量耗尽',
+  '额度用尽',
+  '额度耗尽',
+  'quota exhausted',
+  'quota exceeded',
+  'credit exhausted',
+  'credits exhausted',
+  'out of credits',
+  'out of quota',
+  'usage exhausted',
+  'usage limit reached',
+];
+
+const AUTH_FILE_401_INVALIDATED_STATUS_KEYWORDS = [
+  'token_invalidated',
+  'authentication token has been invalidated',
+  'your authentication token has been invalidated',
+  'token has been invalidated',
+];
+
+export const isAuthFileZeroBalanceProblem = (file: AuthFileItem): boolean => {
+  const statusMessage = getAuthFileStatusMessage(file);
+  if (!statusMessage) return false;
+
+  const normalizedStatusMessage = statusMessage.toLowerCase();
+  return AUTH_FILE_ZERO_BALANCE_STATUS_KEYWORDS.some((keyword) =>
+    normalizedStatusMessage.includes(keyword)
+  );
+};
+
+export const isAuthFile401InvalidatedProblem = (file: AuthFileItem): boolean => {
+  const statusMessage = getAuthFileStatusMessage(file);
+  if (!statusMessage) return false;
+
+  const normalizedStatusMessage = statusMessage.toLowerCase();
+  return AUTH_FILE_401_INVALIDATED_STATUS_KEYWORDS.some((keyword) =>
+    normalizedStatusMessage.includes(keyword)
+  );
+};
+
 export const getTypeLabel = (t: TFunction, type: string): string => {
   const key = `auth_files.filter_${type}`;
   const translated = t(key);

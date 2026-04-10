@@ -30,9 +30,11 @@ import {
   QUOTA_PROVIDER_TYPES,
   clampCardPageSize,
   getAuthFileIcon,
+  isAuthFile401InvalidatedProblem,
   getTypeColor,
   getTypeLabel,
   hasAuthFileStatusMessage,
+  isAuthFileZeroBalanceProblem,
   isRuntimeOnlyAuthFile,
   normalizeProviderKey,
   parsePriorityValue,
@@ -68,8 +70,7 @@ const BATCH_BAR_HIDDEN_TRANSFORM = 'translateX(-50%) translateY(56px)';
 const DEFAULT_REGULAR_PAGE_SIZE = 9;
 const DEFAULT_COMPACT_PAGE_SIZE = 12;
 
-const escapeWildcardSearchSegment = (value: string) =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const escapeWildcardSearchSegment = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const buildWildcardSearch = (value: string): RegExp | null => {
   if (!value.includes('*')) return null;
@@ -80,6 +81,7 @@ const buildWildcardSearch = (value: string): RegExp | null => {
 export function AuthFilesPage() {
   const { t } = useTranslation();
   const showNotification = useNotificationStore((state) => state.showNotification);
+  const showConfirmation = useNotificationStore((state) => state.showConfirmation);
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const resolvedTheme: ResolvedTheme = useThemeStore((state) => state.resolvedTheme);
   const pageTransitionLayer = usePageTransitionLayer();
@@ -131,6 +133,7 @@ export function AuthFilesPage() {
     deselectAll,
     batchDownload,
     batchSetStatus,
+    executeBatchDelete,
     batchDelete,
   } = useAuthFilesData({ refreshKeyStats });
 
@@ -201,10 +204,7 @@ export function AuthFilesPage() {
       if (typeof persisted.problemOnly === 'boolean') {
         setProblemOnly(persisted.problemOnly);
       }
-      if (
-        typeof persistedCompactMode !== 'boolean' &&
-        typeof persisted.compactMode === 'boolean'
-      ) {
+      if (typeof persistedCompactMode !== 'boolean' && typeof persisted.compactMode === 'boolean') {
         setCompactMode(persisted.compactMode);
       }
       if (typeof persisted.search === 'string') {
@@ -220,11 +220,11 @@ export function AuthFilesPage() {
       const regularPageSize =
         typeof persisted.regularPageSize === 'number' && Number.isFinite(persisted.regularPageSize)
           ? clampCardPageSize(persisted.regularPageSize)
-          : legacyPageSize ?? DEFAULT_REGULAR_PAGE_SIZE;
+          : (legacyPageSize ?? DEFAULT_REGULAR_PAGE_SIZE);
       const compactPageSize =
         typeof persisted.compactPageSize === 'number' && Number.isFinite(persisted.compactPageSize)
           ? clampCardPageSize(persisted.compactPageSize)
-          : legacyPageSize ?? DEFAULT_COMPACT_PAGE_SIZE;
+          : (legacyPageSize ?? DEFAULT_COMPACT_PAGE_SIZE);
       setPageSizeByMode({
         regular: regularPageSize,
         compact: compactPageSize,
@@ -436,11 +436,29 @@ export function AuthFilesPage() {
     () => selectedNames.some((name) => statusUpdating[name] === true),
     [selectedNames, statusUpdating]
   );
+  const zeroBalanceProblemNames = useMemo(
+    () =>
+      files
+        .filter((file) => !isRuntimeOnlyAuthFile(file) && isAuthFileZeroBalanceProblem(file))
+        .map((file) => file.name),
+    [files]
+  );
+  const invalidated401ProblemNames = useMemo(
+    () =>
+      files
+        .filter((file) => !isRuntimeOnlyAuthFile(file) && isAuthFile401InvalidatedProblem(file))
+        .map((file) => file.name),
+    [files]
+  );
   const batchStatusButtonsDisabled =
     disableControls ||
     selectedNames.length === 0 ||
     batchStatusUpdating ||
     selectedHasStatusUpdating;
+
+  const zeroBalanceDisableButtonDisabled = disableControls || loading || batchStatusUpdating;
+  const delete401InvalidatedButtonDisabled =
+    disableControls || loading || deletingAll || batchStatusUpdating;
 
   const copyTextWithNotification = useCallback(
     async (text: string) => {
@@ -642,6 +660,59 @@ export function AuthFilesPage() {
       ? t('auth_files.delete_all_button')
       : `${t('common.delete')} ${getTypeLabel(t, filter)}`;
 
+  const handleDisableZeroBalanceProblems = useCallback(() => {
+    if (zeroBalanceProblemNames.length === 0) {
+      showNotification(t('auth_files.zero_balance_disable_none'), 'info');
+      return;
+    }
+
+    showConfirmation({
+      title: t('auth_files.zero_balance_disable_title'),
+      message: t('auth_files.zero_balance_disable_confirm', {
+        count: zeroBalanceProblemNames.length,
+      }),
+      confirmText: t('common.confirm'),
+      onConfirm: async () => {
+        await batchSetStatus(zeroBalanceProblemNames, false);
+        await handleHeaderRefresh();
+      },
+    });
+  }, [
+    batchSetStatus,
+    handleHeaderRefresh,
+    showConfirmation,
+    showNotification,
+    t,
+    zeroBalanceProblemNames,
+  ]);
+
+  const handleDelete401InvalidatedAccounts = useCallback(() => {
+    if (invalidated401ProblemNames.length === 0) {
+      showNotification(t('auth_files.delete_401_invalidated_none'), 'info');
+      return;
+    }
+
+    showConfirmation({
+      title: t('auth_files.delete_401_invalidated_title'),
+      message: t('auth_files.delete_401_invalidated_confirm', {
+        count: invalidated401ProblemNames.length,
+      }),
+      variant: 'danger',
+      confirmText: t('common.confirm'),
+      onConfirm: async () => {
+        await executeBatchDelete(invalidated401ProblemNames);
+        await handleHeaderRefresh();
+      },
+    });
+  }, [
+    executeBatchDelete,
+    handleHeaderRefresh,
+    invalidated401ProblemNames,
+    showConfirmation,
+    showNotification,
+    t,
+  ]);
+
   return (
     <div className={styles.container}>
       <div className={styles.pageHeader}>
@@ -679,6 +750,23 @@ export function AuthFilesPage() {
               loading={deletingAll}
             >
               {deleteAllButtonLabel}
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={handleDelete401InvalidatedAccounts}
+              disabled={delete401InvalidatedButtonDisabled}
+            >
+              {t('auth_files.delete_401_invalidated_button')}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleDisableZeroBalanceProblems}
+              disabled={zeroBalanceDisableButtonDisabled}
+              loading={batchStatusUpdating}
+            >
+              {t('auth_files.zero_balance_disable_button')}
             </Button>
             <input
               ref={fileInputRef}
