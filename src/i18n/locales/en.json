@@ -458,6 +458,14 @@
     "openai_test_all_partial": "Test completed: {{success}} passed, {{failed}} failed"
   },
   "auth_files": {
+    "delete_401_invalidated_button": "Delete 401 Invalidated Accounts",
+    "delete_401_invalidated_title": "Delete 401 invalidated accounts",
+    "delete_401_invalidated_confirm": "Delete {{count}} auth files whose tokens have been invalidated?",
+    "delete_401_invalidated_none": "No 401 invalidated accounts matched.",
+    "zero_balance_disable_button": "Disable Zero-Balance Auth Files",
+    "zero_balance_disable_title": "Disable zero-balance auth files",
+    "zero_balance_disable_confirm": "Disable {{count}} auth files with zero-balance / usage-exhausted problems?",
+    "zero_balance_disable_none": "No zero-balance or usage-exhausted auth files matched.",
     "title": "Auth Files Management",
     "title_section": "Auth Files",
     "description": "Manage all CLI Proxy JSON auth files here (e.g. Qwen, Gemini, Vertex). Uploading a credential immediately enables the corresponding AI integration.",

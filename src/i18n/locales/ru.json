@@ -458,6 +458,14 @@
     "openai_test_all_partial": "Тест завершен: {{success}} прошло, {{failed}} не прошло"
   },
   "auth_files": {
+    "delete_401_invalidated_button": "Удалить 401 недействительные аккаунты",
+    "delete_401_invalidated_title": "Удалить аккаунты с ошибкой 401",
+    "delete_401_invalidated_confirm": "Удалить {{count}} файлов аккаунтов с недействительным token (401)?",
+    "delete_401_invalidated_none": "Подходящие аккаунты с ошибкой 401 не найдены.",
+    "zero_balance_disable_button": "Отключить файлы с нулевым балансом",
+    "zero_balance_disable_title": "Отключить файлы с нулевым балансом",
+    "zero_balance_disable_confirm": "Отключить {{count}} файлов с проблемой нулевого баланса / исчерпанного лимита?",
+    "zero_balance_disable_none": "Подходящих файлов с нулевым балансом или исчерпанным лимитом не найдено.",
     "title": "Управление файлами авторизации",
     "title_section": "Файлы авторизации",
     "description": "Управляйте всеми JSON-файлами авторизации CLI Proxy (например, Qwen, Gemini, Vertex). Загрузка учётных данных сразу включает соответствующую интеграцию AI.",

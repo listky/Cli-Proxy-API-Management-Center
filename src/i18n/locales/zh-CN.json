@@ -458,6 +458,14 @@
     "openai_test_all_partial": "测试完成：{{success}} 个通过，{{failed}} 个失败"
   },
   "auth_files": {
+    "delete_401_invalidated_button": "删除401失效账号",
+    "delete_401_invalidated_title": "删除 401 失效账号",
+    "delete_401_invalidated_confirm": "确定要删除 {{count}} 个 401 token 失效账号文件吗？",
+    "delete_401_invalidated_none": "当前没有可删除的 401 失效账号。",
+    "zero_balance_disable_button": "禁用0余额凭证",
+    "zero_balance_disable_title": "禁用 0 余额凭证",
+    "zero_balance_disable_confirm": "确定要禁用 {{count}} 个 0余额/用量耗尽 类问题凭证吗？",
+    "zero_balance_disable_none": "当前没有可禁用的 0余额/用量耗尽 类问题凭证。",
     "title": "认证文件管理",
     "title_section": "认证文件",
     "description": "这里集中管理 CLI Proxy 支持的所有 JSON 认证文件（如 Qwen、Gemini、Vertex 等），上传后即可在运行时启用相应的 AI 服务。",
