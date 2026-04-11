@@ -443,6 +443,13 @@ export function AuthFilesPage() {
         .map((file) => file.name),
     [files]
   );
+  const disabledAuthFileNames = useMemo(
+    () =>
+      files
+        .filter((file) => !isRuntimeOnlyAuthFile(file) && file.disabled === true)
+        .map((file) => file.name),
+    [files]
+  );
   const invalidated401ProblemNames = useMemo(
     () =>
       files
@@ -457,6 +464,8 @@ export function AuthFilesPage() {
     selectedHasStatusUpdating;
 
   const zeroBalanceDisableButtonDisabled = disableControls || loading || batchStatusUpdating;
+  const enableAllCredentialsButtonDisabled =
+    disableControls || loading || batchStatusUpdating || disabledAuthFileNames.length === 0;
   const delete401InvalidatedButtonDisabled =
     disableControls || loading || deletingAll || batchStatusUpdating;
 
@@ -686,6 +695,32 @@ export function AuthFilesPage() {
     zeroBalanceProblemNames,
   ]);
 
+  const handleEnableAllCredentials = useCallback(() => {
+    if (disabledAuthFileNames.length === 0) {
+      showNotification(t('auth_files.enable_all_credentials_none'), 'info');
+      return;
+    }
+
+    showConfirmation({
+      title: t('auth_files.enable_all_credentials_title'),
+      message: t('auth_files.enable_all_credentials_confirm', {
+        count: disabledAuthFileNames.length,
+      }),
+      confirmText: t('common.confirm'),
+      onConfirm: async () => {
+        await batchSetStatus(disabledAuthFileNames, true);
+        await handleHeaderRefresh();
+      },
+    });
+  }, [
+    batchSetStatus,
+    disabledAuthFileNames,
+    handleHeaderRefresh,
+    showConfirmation,
+    showNotification,
+    t,
+  ]);
+
   const handleDelete401InvalidatedAccounts = useCallback(() => {
     if (invalidated401ProblemNames.length === 0) {
       showNotification(t('auth_files.delete_401_invalidated_none'), 'info');
@@ -750,6 +785,15 @@ export function AuthFilesPage() {
               loading={deletingAll}
             >
               {deleteAllButtonLabel}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleEnableAllCredentials}
+              disabled={enableAllCredentialsButtonDisabled}
+              loading={batchStatusUpdating}
+            >
+              {t('auth_files.enable_all_credentials_button')}
             </Button>
             <Button
               variant="danger"
