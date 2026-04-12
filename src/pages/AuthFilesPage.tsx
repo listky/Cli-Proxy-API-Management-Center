@@ -16,6 +16,7 @@ import type { AnimationPlaybackControlsWithThen } from 'motion-dom';
 import { useInterval } from '@/hooks/useInterval';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { usePageTransitionLayer } from '@/components/common/PageTransitionLayer';
+import { CODEX_CONFIG } from '@/components/quota';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -102,6 +103,7 @@ export function AuthFilesPage() {
   const [sortMode, setSortMode] = useState<AuthFilesSortMode>('default');
   const [batchActionBarVisible, setBatchActionBarVisible] = useState(false);
   const [uiStateHydrated, setUiStateHydrated] = useState(false);
+  const [detectingDisabledCodex, setDetectingDisabledCodex] = useState(false);
   const floatingBatchActionsRef = useRef<HTMLDivElement>(null);
   const batchActionAnimationRef = useRef<AnimationPlaybackControlsWithThen | null>(null);
   const previousSelectionCountRef = useRef(0);
@@ -450,6 +452,16 @@ export function AuthFilesPage() {
         .map((file) => file.name),
     [files]
   );
+  const disabledCodexFiles = useMemo(
+    () =>
+      files.filter(
+        (file) =>
+          !isRuntimeOnlyAuthFile(file) &&
+          file.disabled === true &&
+          normalizeProviderKey(file.type || file.provider || '') === 'codex'
+      ),
+    [files]
+  );
   const invalidated401ProblemNames = useMemo(
     () =>
       files
@@ -463,11 +475,22 @@ export function AuthFilesPage() {
     batchStatusUpdating ||
     selectedHasStatusUpdating;
 
-  const zeroBalanceDisableButtonDisabled = disableControls || loading || batchStatusUpdating;
+  const zeroBalanceDisableButtonDisabled =
+    disableControls || loading || batchStatusUpdating || detectingDisabledCodex;
   const enableAllCredentialsButtonDisabled =
-    disableControls || loading || batchStatusUpdating || disabledAuthFileNames.length === 0;
+    disableControls ||
+    loading ||
+    batchStatusUpdating ||
+    detectingDisabledCodex ||
+    disabledAuthFileNames.length === 0;
+  const detectDisabledCodexButtonDisabled =
+    disableControls ||
+    loading ||
+    batchStatusUpdating ||
+    detectingDisabledCodex ||
+    disabledCodexFiles.length === 0;
   const delete401InvalidatedButtonDisabled =
-    disableControls || loading || deletingAll || batchStatusUpdating;
+    disableControls || loading || deletingAll || batchStatusUpdating || detectingDisabledCodex;
 
   const copyTextWithNotification = useCallback(
     async (text: string) => {
@@ -748,6 +771,88 @@ export function AuthFilesPage() {
     t,
   ]);
 
+  const handleDetectDisabledCodexCredentials = useCallback(() => {
+    if (disabledCodexFiles.length === 0) {
+      showNotification(t('auth_files.detect_disabled_codex_none'), 'info');
+      return;
+    }
+
+    showConfirmation({
+      title: t('auth_files.detect_disabled_codex_title'),
+      message: t('auth_files.detect_disabled_codex_confirm', {
+        count: disabledCodexFiles.length,
+      }),
+      confirmText: t('common.confirm'),
+      onConfirm: async () => {
+        setDetectingDisabledCodex(true);
+        const namesToEnable: string[] = [];
+        const namesToDelete: string[] = [];
+        let skippedCount = 0;
+
+        try {
+          for (const file of disabledCodexFiles) {
+            try {
+              const data = await CODEX_CONFIG.fetchQuota(file, t);
+              const quotaState = CODEX_CONFIG.buildSuccessState(data);
+              const weeklyWindow = quotaState.windows.find((window) => window.id === 'weekly');
+              const weeklyUsedPercent = weeklyWindow?.usedPercent;
+              const hasWeeklyQuotaRemaining =
+                weeklyUsedPercent !== null &&
+                weeklyUsedPercent !== undefined &&
+                weeklyUsedPercent < 100;
+
+              if (hasWeeklyQuotaRemaining) {
+                namesToEnable.push(file.name);
+              } else {
+                skippedCount += 1;
+              }
+            } catch (err: unknown) {
+              const status =
+                typeof err === 'object' && err !== null && 'status' in err
+                  ? Number((err as { status?: unknown }).status)
+                  : undefined;
+
+              if (status === 401 && isAuthFile401InvalidatedProblem(file)) {
+                namesToDelete.push(file.name);
+              } else {
+                skippedCount += 1;
+              }
+            }
+          }
+
+          if (namesToDelete.length > 0) {
+            await executeBatchDelete(namesToDelete);
+          }
+
+          if (namesToEnable.length > 0) {
+            await batchSetStatus(namesToEnable, true);
+          }
+
+          showNotification(
+            t('auth_files.detect_disabled_codex_result', {
+              enabled: namesToEnable.length,
+              deleted: namesToDelete.length,
+              skipped: skippedCount,
+            }),
+            namesToDelete.length > 0 ? 'warning' : 'success'
+          );
+
+          await handleHeaderRefresh();
+        } finally {
+          setDetectingDisabledCodex(false);
+        }
+      },
+    });
+  }, [
+    batchSetStatus,
+    disabledCodexFiles,
+    executeBatchDelete,
+    handleHeaderRefresh,
+    showConfirmation,
+    showNotification,
+    t,
+  ]);
+
   return (
     <div className={styles.container}>
       <div className={styles.pageHeader}>
@@ -794,6 +899,15 @@ export function AuthFilesPage() {
               loading={batchStatusUpdating}
             >
               {t('auth_files.enable_all_credentials_button')}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleDetectDisabledCodexCredentials}
+              disabled={detectDisabledCodexButtonDisabled}
+              loading={detectingDisabledCodex}
+            >
+              {t('auth_files.detect_disabled_codex_button')}
             </Button>
             <Button
               variant="danger"
