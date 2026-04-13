@@ -462,13 +462,12 @@ export function AuthFilesPage() {
       ),
     [files]
   );
-  const codexStatusMessageFiles = useMemo(
+  const codexCredentialFiles = useMemo(
     () =>
       files.filter(
         (file) =>
           !isRuntimeOnlyAuthFile(file) &&
-          normalizeProviderKey(file.type || file.provider || '') === 'codex' &&
-          hasAuthFileStatusMessage(file)
+          normalizeProviderKey(file.type || file.provider || '') === 'codex'
       ),
     [files]
   );
@@ -504,7 +503,7 @@ export function AuthFilesPage() {
     loading ||
     batchStatusUpdating ||
     detectingDisabledCodex ||
-    codexStatusMessageFiles.length === 0;
+    codexCredentialFiles.length === 0;
   const delete401InvalidatedButtonDisabled =
     disableControls || loading || deletingAll || batchStatusUpdating || detectingDisabledCodex;
 
@@ -870,7 +869,7 @@ export function AuthFilesPage() {
   ]);
 
   const handleProcessCodexStatusMessages = useCallback(() => {
-    if (codexStatusMessageFiles.length === 0) {
+    if (codexCredentialFiles.length === 0) {
       showNotification(t('auth_files.process_codex_status_none'), 'info');
       return;
     }
@@ -878,25 +877,45 @@ export function AuthFilesPage() {
     showConfirmation({
       title: t('auth_files.process_codex_status_title'),
       message: t('auth_files.process_codex_status_confirm', {
-        count: codexStatusMessageFiles.length,
+        count: codexCredentialFiles.length,
       }),
       confirmText: t('common.confirm'),
       onConfirm: async () => {
         setDetectingDisabledCodex(true);
-        const namesToDelete = codexStatusMessageFiles
-          .filter((file) => isAuthFile401InvalidatedProblem(file))
-          .map((file) => file.name);
-        const namesToDisable = codexStatusMessageFiles
-          .filter(
-            (file) => !isAuthFile401InvalidatedProblem(file) && isAuthFileZeroBalanceProblem(file)
-          )
-          .map((file) => file.name);
-        const processedNames = new Set([...namesToDelete, ...namesToDisable]);
-        const unchangedCount = codexStatusMessageFiles.filter(
-          (file) => !processedNames.has(file.name)
-        ).length;
+        const namesToDelete: string[] = [];
+        const namesToDisable: string[] = [];
+        let unchangedCount = 0;
+        let unknownCount = 0;
 
         try {
+          for (const file of codexCredentialFiles) {
+            try {
+              const data = await CODEX_CONFIG.fetchQuota(file, t);
+              const quotaState = CODEX_CONFIG.buildSuccessState(data);
+              const weeklyWindow = quotaState.windows.find((window) => window.id === 'weekly');
+              const weeklyUsedPercent = weeklyWindow?.usedPercent;
+
+              if (weeklyUsedPercent === null || weeklyUsedPercent === undefined) {
+                unknownCount += 1;
+              } else if (weeklyUsedPercent >= 100 && !file.disabled) {
+                namesToDisable.push(file.name);
+              } else {
+                unchangedCount += 1;
+              }
+            } catch (err: unknown) {
+              const status =
+                typeof err === 'object' && err !== null && 'status' in err
+                  ? Number((err as { status?: unknown }).status)
+                  : undefined;
+
+              if (status === 401) {
+                namesToDelete.push(file.name);
+              } else {
+                unchangedCount += 1;
+              }
+            }
+          }
+
           if (namesToDelete.length > 0) {
             await executeBatchDelete(namesToDelete);
           }
@@ -910,6 +929,7 @@ export function AuthFilesPage() {
               deleted: namesToDelete.length,
               disabled: namesToDisable.length,
               unchanged: unchangedCount,
+              unknown: unknownCount,
             }),
             namesToDelete.length > 0 ? 'warning' : 'success'
           );
@@ -922,7 +942,7 @@ export function AuthFilesPage() {
     });
   }, [
     batchSetStatus,
-    codexStatusMessageFiles,
+    codexCredentialFiles,
     executeBatchDelete,
     handleHeaderRefresh,
     showConfirmation,
