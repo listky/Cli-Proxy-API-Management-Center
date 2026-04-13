@@ -462,6 +462,16 @@ export function AuthFilesPage() {
       ),
     [files]
   );
+  const codexStatusMessageFiles = useMemo(
+    () =>
+      files.filter(
+        (file) =>
+          !isRuntimeOnlyAuthFile(file) &&
+          normalizeProviderKey(file.type || file.provider || '') === 'codex' &&
+          hasAuthFileStatusMessage(file)
+      ),
+    [files]
+  );
   const invalidated401ProblemNames = useMemo(
     () =>
       files
@@ -489,6 +499,12 @@ export function AuthFilesPage() {
     batchStatusUpdating ||
     detectingDisabledCodex ||
     disabledCodexFiles.length === 0;
+  const processCodexStatusMessagesButtonDisabled =
+    disableControls ||
+    loading ||
+    batchStatusUpdating ||
+    detectingDisabledCodex ||
+    codexStatusMessageFiles.length === 0;
   const delete401InvalidatedButtonDisabled =
     disableControls || loading || deletingAll || batchStatusUpdating || detectingDisabledCodex;
 
@@ -853,6 +869,67 @@ export function AuthFilesPage() {
     t,
   ]);
 
+  const handleProcessCodexStatusMessages = useCallback(() => {
+    if (codexStatusMessageFiles.length === 0) {
+      showNotification(t('auth_files.process_codex_status_none'), 'info');
+      return;
+    }
+
+    showConfirmation({
+      title: t('auth_files.process_codex_status_title'),
+      message: t('auth_files.process_codex_status_confirm', {
+        count: codexStatusMessageFiles.length,
+      }),
+      confirmText: t('common.confirm'),
+      onConfirm: async () => {
+        setDetectingDisabledCodex(true);
+        const namesToDelete = codexStatusMessageFiles
+          .filter((file) => isAuthFile401InvalidatedProblem(file))
+          .map((file) => file.name);
+        const namesToDisable = codexStatusMessageFiles
+          .filter(
+            (file) => !isAuthFile401InvalidatedProblem(file) && isAuthFileZeroBalanceProblem(file)
+          )
+          .map((file) => file.name);
+        const processedNames = new Set([...namesToDelete, ...namesToDisable]);
+        const unchangedCount = codexStatusMessageFiles.filter(
+          (file) => !processedNames.has(file.name)
+        ).length;
+
+        try {
+          if (namesToDelete.length > 0) {
+            await executeBatchDelete(namesToDelete);
+          }
+
+          if (namesToDisable.length > 0) {
+            await batchSetStatus(namesToDisable, false);
+          }
+
+          showNotification(
+            t('auth_files.process_codex_status_result', {
+              deleted: namesToDelete.length,
+              disabled: namesToDisable.length,
+              unchanged: unchangedCount,
+            }),
+            namesToDelete.length > 0 ? 'warning' : 'success'
+          );
+
+          await handleHeaderRefresh();
+        } finally {
+          setDetectingDisabledCodex(false);
+        }
+      },
+    });
+  }, [
+    batchSetStatus,
+    codexStatusMessageFiles,
+    executeBatchDelete,
+    handleHeaderRefresh,
+    showConfirmation,
+    showNotification,
+    t,
+  ]);
+
   return (
     <div className={styles.container}>
       <div className={styles.pageHeader}>
@@ -908,6 +985,15 @@ export function AuthFilesPage() {
               loading={detectingDisabledCodex}
             >
               {t('auth_files.detect_disabled_codex_button')}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleProcessCodexStatusMessages}
+              disabled={processCodexStatusMessagesButtonDisabled}
+              loading={detectingDisabledCodex}
+            >
+              {t('auth_files.process_codex_status_button')}
             </Button>
             <Button
               variant="danger"
