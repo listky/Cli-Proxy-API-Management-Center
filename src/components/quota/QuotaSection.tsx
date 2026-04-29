@@ -218,7 +218,10 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
   useEffect(() => {
     if (loading) return;
     if (filteredFiles.length === 0) {
-      setQuota({});
+      setQuota((prev) => {
+        if (Object.keys(prev).length === 0) return prev;
+        return {};
+      });
       return;
     }
     setQuota((prev) => {
@@ -229,6 +232,16 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
           nextState[file.name] = cached;
         }
       });
+
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(nextState);
+      if (
+        prevKeys.length === nextKeys.length &&
+        prevKeys.every((key) => Object.is(prev[key], nextState[key]))
+      ) {
+        return prev;
+      }
+
       return nextState;
     });
   }, [filteredFiles, loading, setQuota]);
