@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Input } from '@/components/ui/Input';
 import { triggerHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useNotificationStore, useQuotaStore, useThemeStore } from '@/stores';
 import type { AuthFileItem, ResolvedTheme } from '@/types';
@@ -33,6 +34,7 @@ interface QuotaPaginationState<T> {
   totalPages: number;
   currentPage: number;
   pageItems: T[];
+  resetPage: () => void;
   setPageSize: (size: number) => void;
   goToPrev: () => void;
   goToNext: () => void;
@@ -64,6 +66,10 @@ const useQuotaPagination = <T,>(items: T[], defaultPageSize = 6): QuotaPaginatio
     setPage(1);
   }, []);
 
+  const resetPage = useCallback(() => {
+    setPage(1);
+  }, []);
+
   const goToPrev = useCallback(() => {
     setPage((prev) => Math.max(1, prev - 1));
   }, []);
@@ -82,6 +88,7 @@ const useQuotaPagination = <T,>(items: T[], defaultPageSize = 6): QuotaPaginatio
     totalPages,
     currentPage,
     pageItems,
+    resetPage,
     setPageSize,
     goToPrev,
     goToNext,
@@ -115,11 +122,27 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
   const [columns, gridRef] = useGridColumns(380); // Min card width 380px matches SCSS
   const [viewMode, setViewMode] = useState<ViewMode>('paged');
   const [showTooManyWarning, setShowTooManyWarning] = useState(false);
+  const [search, setSearch] = useState('');
 
-  const filteredFiles = useMemo(() => files.filter((file) => config.filterFn(file)), [
+  const providerFiles = useMemo(() => files.filter((file) => config.filterFn(file)), [
     files,
     config
   ]);
+  const normalizedSearch = search.trim().toLowerCase();
+  const filteredFiles = useMemo(() => {
+    const baseFiles = providerFiles;
+    const searchConfig = config.search;
+
+    if (!searchConfig || !normalizedSearch) {
+      return config.sortFn ? [...baseFiles].sort(config.sortFn) : baseFiles;
+    }
+
+    const matchedFiles = baseFiles.filter((file) =>
+      searchConfig.getSearchText(file).toLowerCase().includes(normalizedSearch)
+    );
+
+    return config.sortFn ? [...matchedFiles].sort(config.sortFn) : matchedFiles;
+  }, [providerFiles, config, normalizedSearch]);
   const showAllAllowed = filteredFiles.length <= MAX_SHOW_ALL_THRESHOLD;
   const effectiveViewMode: ViewMode = viewMode === 'all' && !showAllAllowed ? 'paged' : viewMode;
 
@@ -128,12 +151,17 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
     totalPages,
     currentPage,
     pageItems,
+    resetPage,
     setPageSize,
     goToPrev,
     goToNext,
     loading: sectionLoading,
     setLoading
   } = useQuotaPagination(filteredFiles);
+
+  useEffect(() => {
+    resetPage();
+  }, [normalizedSearch, resetPage]);
 
   useEffect(() => {
     if (showAllAllowed) return;
@@ -255,6 +283,20 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
       title={titleNode}
       extra={
         <div className={styles.headerActions}>
+          {config.search && (
+            <div className={styles.quotaSearchItem}>
+              <label htmlFor={`${config.type}-quota-search`} className={styles.quotaSearchLabel}>
+                {t(config.search.labelKey)}
+              </label>
+              <Input
+                id={`${config.type}-quota-search`}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t(config.search.placeholderKey)}
+                className={styles.quotaSearchInput}
+              />
+            </div>
+          )}
           <div className={styles.viewModeToggle}>
             <Button
               variant="secondary"
@@ -299,10 +341,15 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
         </div>
       }
     >
-      {filteredFiles.length === 0 ? (
+      {providerFiles.length === 0 ? (
         <EmptyState
           title={t(`${config.i18nPrefix}.empty_title`)}
           description={t(`${config.i18nPrefix}.empty_desc`)}
+        />
+      ) : filteredFiles.length === 0 && config.search ? (
+        <EmptyState
+          title={t(config.search.emptyTitleKey)}
+          description={t(config.search.emptyDescKey)}
         />
       ) : (
         <>

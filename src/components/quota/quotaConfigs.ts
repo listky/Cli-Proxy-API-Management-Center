@@ -111,6 +111,14 @@ export interface QuotaConfig<TState, TData> {
   i18nPrefix: string;
   cardIdleMessageKey?: string;
   filterFn: (file: AuthFileItem) => boolean;
+  search?: {
+    getSearchText: (file: AuthFileItem) => string;
+    labelKey: string;
+    placeholderKey: string;
+    emptyTitleKey: string;
+    emptyDescKey: string;
+  };
+  sortFn?: (a: AuthFileItem, b: AuthFileItem) => number;
   fetchQuota: (file: AuthFileItem, t: TFunction) => Promise<TData>;
   storeSelector: (state: QuotaStore) => Record<string, TState>;
   storeSetter: keyof QuotaStore;
@@ -1166,6 +1174,25 @@ export const CODEX_CONFIG: QuotaConfig<
   i18nPrefix: 'codex_quota',
   cardIdleMessageKey: 'quota_management.card_idle_hint',
   filterFn: (file) => isCodexFile(file) && !isDisabledAuthFile(file),
+  search: {
+    getSearchText: (file) => file.name,
+    labelKey: 'codex_quota.search_label',
+    placeholderKey: 'codex_quota.search_placeholder',
+    emptyTitleKey: 'codex_quota.search_empty_title',
+    emptyDescKey: 'codex_quota.search_empty_desc',
+  },
+  sortFn: (a, b) => {
+    const planTypeA = resolveCodexPlanType(a);
+    const planTypeB = resolveCodexPlanType(b);
+    const isFreeA = planTypeA === 'free';
+    const isFreeB = planTypeB === 'free';
+
+    if (isFreeA !== isFreeB) {
+      return isFreeA ? 1 : -1;
+    }
+
+    return a.name.localeCompare(b.name);
+  },
   fetchQuota: fetchCodexQuota,
   storeSelector: (state) => state.codexQuota,
   storeSetter: 'setCodexQuota',
