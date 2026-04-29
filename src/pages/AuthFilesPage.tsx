@@ -814,7 +814,7 @@ export function AuthFilesPage() {
               const hasWeeklyQuotaRemaining =
                 weeklyUsedPercent !== null &&
                 weeklyUsedPercent !== undefined &&
-                weeklyUsedPercent < 100;
+                weeklyUsedPercent <= 99;
 
               if (hasWeeklyQuotaRemaining) {
                 namesToEnable.push(file.name);
@@ -897,7 +897,7 @@ export function AuthFilesPage() {
 
               if (weeklyUsedPercent === null || weeklyUsedPercent === undefined) {
                 unknownCount += 1;
-              } else if (weeklyUsedPercent >= 100 && !file.disabled) {
+              } else if (weeklyUsedPercent > 99 && !file.disabled) {
                 namesToDisable.push(file.name);
               } else {
                 unchangedCount += 1;
