@@ -1184,11 +1184,16 @@ export const CODEX_CONFIG: QuotaConfig<
   sortFn: (a, b, quota) => {
     const planTypeA = normalizePlanType(quota[a.name]?.planType) ?? resolveCodexPlanType(a);
     const planTypeB = normalizePlanType(quota[b.name]?.planType) ?? resolveCodexPlanType(b);
-    const isFreeA = planTypeA === 'free';
-    const isFreeB = planTypeB === 'free';
+    const rankPlanType = (planType: string | null): number => {
+      if (!planType) return 1;
+      return planType === 'free' ? 2 : 0;
+    };
 
-    if (isFreeA !== isFreeB) {
-      return isFreeA ? 1 : -1;
+    const rankA = rankPlanType(planTypeA);
+    const rankB = rankPlanType(planTypeB);
+
+    if (rankA !== rankB) {
+      return rankA - rankB;
     }
 
     return a.name.localeCompare(b.name);
