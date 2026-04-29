@@ -118,7 +118,7 @@ export interface QuotaConfig<TState, TData> {
     emptyTitleKey: string;
     emptyDescKey: string;
   };
-  sortFn?: (a: AuthFileItem, b: AuthFileItem) => number;
+  sortFn?: (a: AuthFileItem, b: AuthFileItem, quota: Record<string, TState>) => number;
   fetchQuota: (file: AuthFileItem, t: TFunction) => Promise<TData>;
   storeSelector: (state: QuotaStore) => Record<string, TState>;
   storeSetter: keyof QuotaStore;
@@ -1181,9 +1181,9 @@ export const CODEX_CONFIG: QuotaConfig<
     emptyTitleKey: 'codex_quota.search_empty_title',
     emptyDescKey: 'codex_quota.search_empty_desc',
   },
-  sortFn: (a, b) => {
-    const planTypeA = resolveCodexPlanType(a);
-    const planTypeB = resolveCodexPlanType(b);
+  sortFn: (a, b, quota) => {
+    const planTypeA = normalizePlanType(quota[a.name]?.planType) ?? resolveCodexPlanType(a);
+    const planTypeB = normalizePlanType(quota[b.name]?.planType) ?? resolveCodexPlanType(b);
     const isFreeA = planTypeA === 'free';
     const isFreeB = planTypeB === 'free';
 

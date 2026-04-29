@@ -123,6 +123,7 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
   const [viewMode, setViewMode] = useState<ViewMode>('paged');
   const [showTooManyWarning, setShowTooManyWarning] = useState(false);
   const [search, setSearch] = useState('');
+  const { quota, loadQuota } = useQuotaLoader(config);
 
   const providerFiles = useMemo(() => files.filter((file) => config.filterFn(file)), [
     files,
@@ -134,15 +135,17 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
     const searchConfig = config.search;
 
     if (!searchConfig || !normalizedSearch) {
-      return config.sortFn ? [...baseFiles].sort(config.sortFn) : baseFiles;
+      return config.sortFn ? [...baseFiles].sort((a, b) => config.sortFn!(a, b, quota)) : baseFiles;
     }
 
     const matchedFiles = baseFiles.filter((file) =>
       searchConfig.getSearchText(file).toLowerCase().includes(normalizedSearch)
     );
 
-    return config.sortFn ? [...matchedFiles].sort(config.sortFn) : matchedFiles;
-  }, [providerFiles, config, normalizedSearch]);
+    return config.sortFn
+      ? [...matchedFiles].sort((a, b) => config.sortFn!(a, b, quota))
+      : matchedFiles;
+  }, [providerFiles, config, normalizedSearch, quota]);
   const showAllAllowed = filteredFiles.length <= MAX_SHOW_ALL_THRESHOLD;
   const effectiveViewMode: ViewMode = viewMode === 'all' && !showAllAllowed ? 'paged' : viewMode;
 
@@ -188,8 +191,6 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
       setPageSize(Math.min(columns * 3, MAX_ITEMS_PER_PAGE));
     }
   }, [effectiveViewMode, columns, filteredFiles.length, setPageSize]);
-
-  const { quota, loadQuota } = useQuotaLoader(config);
 
   const pendingQuotaRefreshRef = useRef(false);
   const prevFilesLoadingRef = useRef(loading);
