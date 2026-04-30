@@ -4,9 +4,10 @@
 
 import { useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { authFilesApi } from '@/services/api';
 import type { AuthFileItem } from '@/types';
 import { useQuotaStore } from '@/stores';
-import { getStatusFromError } from '@/utils/quota';
+import { getStatusFromError, normalizePlanType } from '@/utils/quota';
 import type { QuotaConfig } from './quotaConfigs';
 
 type QuotaScope = 'page' | 'all';
@@ -22,6 +23,20 @@ interface LoadQuotaResult<TData> {
   error?: string;
   errorStatus?: number;
 }
+
+const persistCodexPlanType = async (file: AuthFileItem, planType: string | null | undefined) => {
+  const normalizedPlanType = normalizePlanType(planType);
+  if (!normalizedPlanType) return;
+
+  const current = await authFilesApi.downloadJsonObject(file.name);
+  const currentPlanType = normalizePlanType(current.plan_type ?? current.planType);
+  if (currentPlanType === normalizedPlanType) return;
+
+  await authFilesApi.saveJsonObject(file.name, {
+    ...current,
+    plan_type: normalizedPlanType,
+  });
+};
 
 export function useQuotaLoader<TState, TData>(config: QuotaConfig<TState, TData>) {
   const { t } = useTranslation();
@@ -69,6 +84,19 @@ export function useQuotaLoader<TState, TData>(config: QuotaConfig<TState, TData>
         );
 
         if (requestId !== requestIdRef.current) return;
+
+        if (config.type === 'codex') {
+          const targetMap = new Map(targets.map((file) => [file.name, file]));
+          await Promise.all(
+            results.map(async (result) => {
+              if (result.status !== 'success') return;
+              const file = targetMap.get(result.name);
+              if (!file) return;
+              const data = result.data as { planType?: string | null } | undefined;
+              await persistCodexPlanType(file, data?.planType);
+            })
+          );
+        }
 
         setQuota((prev) => {
           const nextState = { ...prev };

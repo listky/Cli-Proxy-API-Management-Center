@@ -8,9 +8,10 @@ import {
   GEMINI_CLI_CONFIG,
   KIMI_CONFIG
 } from '@/components/quota';
+import { authFilesApi } from '@/services/api';
 import { useNotificationStore, useQuotaStore } from '@/stores';
 import type { AuthFileItem } from '@/types';
-import { getStatusFromError } from '@/utils/quota';
+import { getStatusFromError, normalizePlanType } from '@/utils/quota';
 import {
   isRuntimeOnlyAuthFile,
   resolveQuotaErrorMessage,
@@ -20,6 +21,20 @@ import { QuotaProgressBar } from '@/features/authFiles/components/QuotaProgressB
 import styles from '@/pages/AuthFilesPage.module.scss';
 
 type QuotaState = { status?: string; error?: string; errorStatus?: number } | undefined;
+
+const persistCodexPlanType = async (file: AuthFileItem, planType: string | null | undefined) => {
+  const normalizedPlanType = normalizePlanType(planType);
+  if (!normalizedPlanType) return;
+
+  const current = await authFilesApi.downloadJsonObject(file.name);
+  const currentPlanType = normalizePlanType(current.plan_type ?? current.planType);
+  if (currentPlanType === normalizedPlanType) return;
+
+  await authFilesApi.saveJsonObject(file.name, {
+    ...current,
+    plan_type: normalizedPlanType,
+  });
+};
 
 const getQuotaConfig = (type: QuotaProviderType) => {
   if (type === 'antigravity') return ANTIGRAVITY_CONFIG;
@@ -82,6 +97,10 @@ export function AuthFileQuotaSection(props: AuthFileQuotaSectionProps) {
         ...prev,
         [file.name]: config.buildSuccessState(data)
       }));
+      if (quotaType === 'codex') {
+        const codexData = data as { planType?: string | null };
+        await persistCodexPlanType(file, codexData.planType);
+      }
       showNotification(t('auth_files.quota_refresh_success', { name: file.name }), 'success');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : t('common.unknown_error');

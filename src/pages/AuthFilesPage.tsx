@@ -25,6 +25,7 @@ import { IconFilterAll } from '@/components/ui/icons';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { copyToClipboard } from '@/utils/clipboard';
+import { authFilesApi } from '@/services/api';
 import {
   MAX_CARD_PAGE_SIZE,
   MIN_CARD_PAGE_SIZE,
@@ -62,6 +63,8 @@ import {
   type AuthFilesSortMode,
 } from '@/features/authFiles/uiState';
 import { useAuthStore, useNotificationStore, useThemeStore } from '@/stores';
+import type { AuthFileItem } from '@/types';
+import { normalizePlanType, resolveCodexPlanType } from '@/utils/quota';
 import styles from './AuthFilesPage.module.scss';
 
 const easePower3Out = (progress: number) => 1 - (1 - progress) ** 4;
@@ -77,6 +80,22 @@ const buildWildcardSearch = (value: string): RegExp | null => {
   if (!value.includes('*')) return null;
   const pattern = value.split('*').map(escapeWildcardSearchSegment).join('.*');
   return new RegExp(pattern, 'i');
+};
+
+const persistCodexPlanType = async (file: AuthFileItem, planType: string | null | undefined) => {
+  const normalizedPlanType = normalizePlanType(planType);
+  if (!normalizedPlanType) return false;
+
+  const current = await authFilesApi.downloadJsonObject(file.name);
+  const currentPlanType = normalizePlanType(current.plan_type ?? current.planType) ?? resolveCodexPlanType(file);
+  if (currentPlanType === normalizedPlanType) return false;
+
+  await authFilesApi.saveJsonObject(file.name, {
+    ...current,
+    plan_type: normalizedPlanType,
+  });
+
+  return true;
 };
 
 export function AuthFilesPage() {
@@ -884,6 +903,7 @@ export function AuthFilesPage() {
         setDetectingDisabledCodex(true);
         const namesToDelete: string[] = [];
         const namesToDisable: string[] = [];
+        let updatedPlanTypeCount = 0;
         let unchangedCount = 0;
         let unknownCount = 0;
 
@@ -891,6 +911,9 @@ export function AuthFilesPage() {
           for (const file of codexCredentialFiles) {
             try {
               const data = await CODEX_CONFIG.fetchQuota(file, t);
+              if (await persistCodexPlanType(file, data.planType)) {
+                updatedPlanTypeCount += 1;
+              }
               const quotaState = CODEX_CONFIG.buildSuccessState(data);
               const weeklyWindow = quotaState.windows.find((window) => window.id === 'weekly');
               const weeklyUsedPercent = weeklyWindow?.usedPercent;
@@ -928,7 +951,7 @@ export function AuthFilesPage() {
             t('auth_files.process_codex_status_result', {
               deleted: namesToDelete.length,
               disabled: namesToDisable.length,
-              unchanged: unchangedCount,
+              unchanged: Math.max(0, unchangedCount - updatedPlanTypeCount),
               unknown: unknownCount,
             }),
             namesToDelete.length > 0 ? 'warning' : 'success'
