@@ -111,6 +111,13 @@ export interface QuotaConfig<TState, TData> {
   i18nPrefix: string;
   cardIdleMessageKey?: string;
   filterFn: (file: AuthFileItem) => boolean;
+  planFilter?: {
+    options: Array<{
+      value: string;
+      labelKey: string;
+    }>;
+    getPlanType: (file: AuthFileItem, quota: Record<string, TState>) => string | null;
+  };
   search?: {
     getSearchText: (file: AuthFileItem) => string;
     labelKey: string;
@@ -1174,6 +1181,15 @@ export const CODEX_CONFIG: QuotaConfig<
   i18nPrefix: 'codex_quota',
   cardIdleMessageKey: 'quota_management.card_idle_hint',
   filterFn: (file) => isCodexFile(file) && !isDisabledAuthFile(file),
+  planFilter: {
+    options: [
+      { value: 'all', labelKey: 'codex_quota.plan_filter_all' },
+      { value: 'paid', labelKey: 'codex_quota.plan_filter_paid' },
+      { value: 'free', labelKey: 'codex_quota.plan_filter_free' },
+    ],
+    getPlanType: (file, quota) =>
+      normalizePlanType(quota[file.name]?.planType) ?? resolveCodexPlanType(file),
+  },
   search: {
     getSearchText: (file) => file.name,
     labelKey: 'codex_quota.search_label',

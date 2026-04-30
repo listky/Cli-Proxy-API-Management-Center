@@ -8,10 +8,12 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
 import { triggerHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useNotificationStore, useQuotaStore, useThemeStore } from '@/stores';
+import { authFilesApi } from '@/services/api';
 import type { AuthFileItem, ResolvedTheme } from '@/types';
-import { getStatusFromError } from '@/utils/quota';
+import { getStatusFromError, isRuntimeOnlyAuthFile, normalizePlanType } from '@/utils/quota';
 import { QuotaCard } from './QuotaCard';
 import type { QuotaStatusState } from './QuotaCard';
 import { useQuotaLoader } from './useQuotaLoader';
@@ -28,6 +30,20 @@ type ViewMode = 'paged' | 'all';
 
 const MAX_ITEMS_PER_PAGE = 25;
 const MAX_SHOW_ALL_THRESHOLD = 30;
+
+const persistCodexPlanType = async (file: AuthFileItem, planType: string | null | undefined) => {
+  const normalizedPlanType = normalizePlanType(planType);
+  if (!normalizedPlanType) return;
+
+  const current = await authFilesApi.downloadJsonObject(file.name);
+  const currentPlanType = normalizePlanType(current.plan_type ?? current.planType);
+  if (currentPlanType === normalizedPlanType) return;
+
+  await authFilesApi.saveJsonObject(file.name, {
+    ...current,
+    plan_type: normalizedPlanType,
+  });
+};
 
 interface QuotaPaginationState<T> {
   pageSize: number;
@@ -123,6 +139,7 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
   const [viewMode, setViewMode] = useState<ViewMode>('paged');
   const [showTooManyWarning, setShowTooManyWarning] = useState(false);
   const [search, setSearch] = useState('');
+  const [planFilterValue, setPlanFilterValue] = useState('all');
   const { quota, loadQuota } = useQuotaLoader(config);
 
   const providerFiles = useMemo(() => files.filter((file) => config.filterFn(file)), [
@@ -133,19 +150,31 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
   const filteredFiles = useMemo(() => {
     const baseFiles = providerFiles;
     const searchConfig = config.search;
+    const planFilter = config.planFilter;
+
+    const planFilteredFiles = !planFilter || planFilterValue === 'all'
+      ? baseFiles
+      : baseFiles.filter((file) => {
+          const planType = planFilter.getPlanType(file, quota);
+          if (planFilterValue === 'free') return planType === 'free';
+          if (planFilterValue === 'paid') return planType !== null && planType !== 'free';
+          return true;
+        });
 
     if (!searchConfig || !normalizedSearch) {
-      return config.sortFn ? [...baseFiles].sort((a, b) => config.sortFn!(a, b, quota)) : baseFiles;
+      return config.sortFn
+        ? [...planFilteredFiles].sort((a, b) => config.sortFn!(a, b, quota))
+        : planFilteredFiles;
     }
 
-    const matchedFiles = baseFiles.filter((file) =>
+    const matchedFiles = planFilteredFiles.filter((file) =>
       searchConfig.getSearchText(file).toLowerCase().includes(normalizedSearch)
     );
 
     return config.sortFn
       ? [...matchedFiles].sort((a, b) => config.sortFn!(a, b, quota))
       : matchedFiles;
-  }, [providerFiles, config, normalizedSearch, quota]);
+  }, [providerFiles, config, normalizedSearch, planFilterValue, quota]);
   const showAllAllowed = filteredFiles.length <= MAX_SHOW_ALL_THRESHOLD;
   const effectiveViewMode: ViewMode = viewMode === 'all' && !showAllAllowed ? 'paged' : viewMode;
 
@@ -164,7 +193,7 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
 
   useEffect(() => {
     resetPage();
-  }, [normalizedSearch, resetPage]);
+  }, [normalizedSearch, planFilterValue, resetPage]);
 
   useEffect(() => {
     if (showAllAllowed) return;
@@ -262,6 +291,10 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
           ...prev,
           [file.name]: config.buildSuccessState(data)
         }));
+        if (config.type === 'codex' && !isRuntimeOnlyAuthFile(file)) {
+          const codexData = data as { planType?: string | null };
+          await persistCodexPlanType(file, codexData.planType);
+        }
         showNotification(t('auth_files.quota_refresh_success', { name: file.name }), 'success');
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : t('common.unknown_error');
@@ -308,6 +341,24 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t(config.search.placeholderKey)}
                 className={styles.quotaSearchInput}
+              />
+            </div>
+          )}
+          {config.planFilter && (
+            <div className={styles.quotaPlanFilterItem}>
+              <label htmlFor={`${config.type}-quota-plan-filter`} className={styles.quotaSearchLabel}>
+                {t('codex_quota.plan_filter_label')}
+              </label>
+              <Select
+                id={`${config.type}-quota-plan-filter`}
+                value={planFilterValue}
+                options={config.planFilter.options.map((option) => ({
+                  value: option.value,
+                  label: t(option.labelKey),
+                }))}
+                onChange={setPlanFilterValue}
+                ariaLabel={t('codex_quota.plan_filter_label')}
+                className={styles.quotaPlanFilterSelect}
               />
             </div>
           )}
